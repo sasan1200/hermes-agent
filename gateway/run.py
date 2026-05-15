@@ -1431,7 +1431,10 @@ class GatewayRunner:
             return
 
         connected = self.config.get_connected_platforms()
-        messaging_platforms = [p for p in connected if p not in {Platform.LOCAL, Platform.API_SERVER, Platform.WEBHOOK}]
+        messaging_platforms = [
+            p for p in connected
+            if p not in {Platform.LOCAL, Platform.API_SERVER, Platform.WEBHOOK, Platform.DISCORD_INTERACTIONS}
+        ]
         if not messaging_platforms:
             return
 
@@ -5235,6 +5238,18 @@ class GatewayRunner:
             adapter = DiscordAdapter(config)
             adapter.gateway_runner = self  # For cross-platform admin alerts on unauthorized slash
             return adapter
+
+        elif platform == Platform.DISCORD_INTERACTIONS:
+            from gateway.platforms.discord_interactions import (
+                DiscordInteractionsAdapter,
+                check_discord_interactions_requirements,
+            )
+            if not check_discord_interactions_requirements():
+                logger.warning("Discord Interactions: aiohttp/PyNaCl not installed")
+                return None
+            adapter = DiscordInteractionsAdapter(config)
+            adapter.gateway_runner = self  # For cross-platform delivery
+            return adapter
         
         elif platform == Platform.WHATSAPP:
             from gateway.platforms.whatsapp import WhatsAppAdapter, check_whatsapp_requirements
@@ -5392,9 +5407,10 @@ class GatewayRunner:
         # Home Assistant events are system-generated (state changes), not
         # user-initiated messages.  The HASS_TOKEN already authenticates the
         # connection, so HA events are always authorized.
-        # Webhook events are authenticated via HMAC signature validation in
-        # the adapter itself — no user allowlist applies.
-        if source.platform in {Platform.HOMEASSISTANT, Platform.WEBHOOK}:
+        # Webhook events are authenticated/authorized in the adapter itself
+        # (HMAC for generic webhooks, Ed25519 + Discord allowlists for
+        # discord_interactions) — no runner user allowlist applies.
+        if source.platform in {Platform.HOMEASSISTANT, Platform.WEBHOOK, Platform.DISCORD_INTERACTIONS}:
             return True
 
         user_id = source.user_id
@@ -7525,7 +7541,11 @@ class GatewayRunner:
         
         # One-time prompt if no home channel is set for this platform
         # Skip for webhooks - they deliver directly to configured targets (github_comment, etc.)
-        if not history and source.platform and source.platform != Platform.LOCAL and source.platform != Platform.WEBHOOK:
+        if (
+            not history
+            and source.platform
+            and source.platform not in {Platform.LOCAL, Platform.WEBHOOK, Platform.DISCORD_INTERACTIONS}
+        ):
             platform_name = source.platform.value
             env_key = _home_target_env_var(platform_name)
             if not os.getenv(env_key):

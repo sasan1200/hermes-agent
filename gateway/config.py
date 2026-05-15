@@ -108,6 +108,7 @@ class Platform(Enum):
     LOCAL = "local"
     TELEGRAM = "telegram"
     DISCORD = "discord"
+    DISCORD_INTERACTIONS = "discord_interactions"
     WHATSAPP = "whatsapp"
     SLACK = "slack"
     SIGNAL = "signal"
@@ -417,6 +418,9 @@ _PLATFORM_CONNECTED_CHECKERS: dict[Platform, Callable[[PlatformConfig], bool]] =
     Platform.SMS: lambda cfg: bool(os.getenv("TWILIO_ACCOUNT_SID")),
     Platform.API_SERVER: lambda cfg: True,
     Platform.WEBHOOK: lambda cfg: True,
+    Platform.DISCORD_INTERACTIONS: lambda cfg: bool(
+        cfg.extra.get("public_key") or os.getenv("DISCORD_INTERACTIONS_PUBLIC_KEY")
+    ),
     Platform.MSGRAPH_WEBHOOK: lambda cfg: True,
     Platform.FEISHU: lambda cfg: bool(cfg.extra.get("app_id")),
     Platform.WECOM: lambda cfg: bool(cfg.extra.get("bot_id")),
@@ -1282,6 +1286,45 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
         if Platform.DISCORD not in config.platforms:
             config.platforms[Platform.DISCORD] = PlatformConfig()
         config.platforms[Platform.DISCORD].reply_to_mode = discord_reply_mode
+
+    # Discord Interactions HTTPS adapter (slash commands over webhooks)
+    discord_interactions_enabled = os.getenv("DISCORD_INTERACTIONS_ENABLED", "").lower() in {
+        "true",
+        "1",
+        "yes",
+    }
+    discord_interactions_public_key = os.getenv("DISCORD_INTERACTIONS_PUBLIC_KEY", "")
+    discord_interactions_port = os.getenv("DISCORD_INTERACTIONS_PORT")
+    discord_interactions_host = os.getenv("DISCORD_INTERACTIONS_HOST")
+    discord_interactions_path = os.getenv("DISCORD_INTERACTIONS_PATH")
+    discord_interactions_application_id = os.getenv("DISCORD_INTERACTIONS_APPLICATION_ID")
+    if discord_interactions_enabled or discord_interactions_public_key:
+        if Platform.DISCORD_INTERACTIONS not in config.platforms:
+            config.platforms[Platform.DISCORD_INTERACTIONS] = PlatformConfig()
+        config.platforms[Platform.DISCORD_INTERACTIONS].enabled = True
+        if discord_interactions_public_key:
+            config.platforms[Platform.DISCORD_INTERACTIONS].extra["public_key"] = (
+                discord_interactions_public_key
+            )
+        if discord_interactions_application_id:
+            config.platforms[Platform.DISCORD_INTERACTIONS].extra["application_id"] = (
+                discord_interactions_application_id
+            )
+        if discord_interactions_host:
+            config.platforms[Platform.DISCORD_INTERACTIONS].extra["host"] = (
+                discord_interactions_host
+            )
+        if discord_interactions_path:
+            config.platforms[Platform.DISCORD_INTERACTIONS].extra["path"] = (
+                discord_interactions_path
+            )
+        if discord_interactions_port:
+            try:
+                config.platforms[Platform.DISCORD_INTERACTIONS].extra["port"] = int(
+                    discord_interactions_port
+                )
+            except ValueError:
+                pass
     
     # WhatsApp (typically uses different auth mechanism)
     whatsapp_enabled = os.getenv("WHATSAPP_ENABLED", "").lower() in {"true", "1", "yes"}

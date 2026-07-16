@@ -215,3 +215,49 @@ class TestWebSocketHostOriginGuard:
             },
         ):
             pass
+
+
+class TestAllowedHostsEnv:
+    """HERMES_DASHBOARD_ALLOWED_HOSTS lets an operator front the dashboard
+    with a trusted reverse-proxy or tailnet hostname (e.g. `tailscale
+    serve`) without binding to 0.0.0.0 — which would disable host
+    validation entirely. The env var is an explicit, opt-in allow-list."""
+
+    def test_listed_host_accepted_on_loopback_bind(self, monkeypatch):
+        from hermes_cli.web_server import _is_accepted_host
+
+        monkeypatch.setenv(
+            "HERMES_DASHBOARD_ALLOWED_HOSTS", "dash.corp.net"
+        )
+        assert _is_accepted_host("dash.corp.net", "127.0.0.1")
+        assert _is_accepted_host("dash.corp.net:9119", "127.0.0.1")
+
+    def test_listed_host_case_insensitive_and_multi_value(self, monkeypatch):
+        from hermes_cli.web_server import _is_accepted_host
+
+        monkeypatch.setenv(
+            "HERMES_DASHBOARD_ALLOWED_HOSTS",
+            "proxy.internal, DASH.corp.net",
+        )
+        assert _is_accepted_host("dash.corp.net", "127.0.0.1")
+        assert _is_accepted_host("PROXY.INTERNAL", "127.0.0.1")
+
+    def test_unlisted_host_still_rejected(self, monkeypatch):
+        from hermes_cli.web_server import _is_accepted_host
+
+        monkeypatch.setenv(
+            "HERMES_DASHBOARD_ALLOWED_HOSTS", "trusted.example"
+        )
+        assert not _is_accepted_host("evil.example", "127.0.0.1")
+
+    def test_empty_or_unset_env_is_a_noop(self, monkeypatch):
+        """An unset / empty allow-list must not weaken the default
+        DNS-rebinding defence."""
+        from hermes_cli.web_server import _is_accepted_host
+
+        monkeypatch.delenv(
+            "HERMES_DASHBOARD_ALLOWED_HOSTS", raising=False
+        )
+        assert not _is_accepted_host("evil.example", "127.0.0.1")
+        monkeypatch.setenv("HERMES_DASHBOARD_ALLOWED_HOSTS", "")
+        assert not _is_accepted_host("evil.example", "127.0.0.1")

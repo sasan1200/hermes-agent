@@ -447,6 +447,22 @@ def _is_accepted_host(host_header: str, bound_host: str) -> bool:
     if bound_host in {"0.0.0.0", "::"}:
         return True
 
+    # Hosts explicitly allow-listed via HERMES_DASHBOARD_ALLOWED_HOSTS are
+    # accepted even on a loopback / specific-host bind. This lets an operator
+    # front the dashboard with a trusted reverse proxy or tailnet hostname
+    # (for example, via `tailscale serve`) without binding to 0.0.0.0, which
+    # would disable host validation entirely. Comma-separated, matched
+    # case-insensitively.
+    allowed_hosts_env = os.environ.get("HERMES_DASHBOARD_ALLOWED_HOSTS", "")
+    if allowed_hosts_env:
+        allowed = {
+            h.strip().lower()
+            for h in allowed_hosts_env.split(",")
+            if h.strip()
+        }
+        if host_only in allowed:
+            return True
+
     # Loopback bind: accept the loopback names
     bound_lc = bound_host.lower()
     if bound_lc in _LOOPBACK_HOST_VALUES:
